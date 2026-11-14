@@ -1,0 +1,181 @@
+diff --git a/emulator-core/src/main/cpp/xenia/src/xenia/gpu/command_processor.cc b/emulator-core/src/main/cpp/xenia/src/xenia/gpu/command_processor.cc
+index 3ea022494..ad2e18ae8 100644
+--- a/emulator-core/src/main/cpp/xenia/src/xenia/gpu/command_processor.cc
++++ b/emulator-core/src/main/cpp/xenia/src/xenia/gpu/command_processor.cc
+@@ -392,6 +392,14 @@ bool CommandProcessor::Initialize() {
+   }
+ 
+   worker_running_ = true;
++  if (!kernel_state_) {
++    host_worker_thread_ = std::thread([this]() {
++      host_worker_thread_id_ = std::this_thread::get_id();
++      xe::threading::set_name("GPU Commands");
++      WorkerThreadMain();
++    });
++    return true;
++  }
+   worker_thread_ =
+       kernel::object_ref<kernel::XHostThread>(new kernel::XHostThread(
+           kernel_state_, 128 * 1024, 0,
+@@ -409,7 +417,7 @@ bool CommandProcessor::Initialize() {
+ void CommandProcessor::Shutdown() {
+   // Already stopped if drained early during relaunch (stopped again at
+   // teardown).
+-  if (!worker_thread_) {
++  if (!worker_thread_ && !host_worker_thread_.joinable()) {
+     return;
+   }
+ 
+@@ -417,8 +425,12 @@ void CommandProcessor::Shutdown() {
+ 
+   worker_running_ = false;
+   write_ptr_index_event_->Set();
+-  worker_thread_->Wait(0, 0, 0, nullptr);
+-  worker_thread_.reset();
++  if (host_worker_thread_.joinable()) {
++    host_worker_thread_.join();
++  } else {
++    worker_thread_->Wait(0, 0, 0, nullptr);
++    worker_thread_.reset();
++  }
+ 
+   if (wrm_writer_callback_handle_) {
+     memory_->UnregisterPhysicalMemoryInvalidationCallback(
+@@ -514,7 +526,8 @@ void CommandProcessor::RestoreGammaRamp(
+ 
+ void CommandProcessor::CallInThread(std::function<void()> fn) {
+   if (!has_pending_fns_.load(std::memory_order_acquire) &&
+-      kernel::XThread::IsInThread(worker_thread_.get())) {
++      (kernel_state_ ? kernel::XThread::IsInThread(worker_thread_.get())
++                     : std::this_thread::get_id() == host_worker_thread_id_)) {
+     fn();
+   } else {
+     std::lock_guard<std::mutex> lock(pending_fns_mutex_);
+@@ -1720,7 +1733,7 @@ void CommandProcessor::InitializeRingBuffer(uint32_t ptr, uint32_t size_log2) {
+   primary_buffer_ptr_ = ptr;
+   primary_buffer_size_ = uint32_t(1) << (size_log2 + 3);
+ 
+-  std::memset(kernel_state_->memory()->TranslatePhysical(primary_buffer_ptr_),
++  std::memset(memory_->TranslatePhysical(primary_buffer_ptr_),
+               0, primary_buffer_size_);
+ }
+ 
+@@ -1740,6 +1753,7 @@ XE_NOINLINE XE_COLD void CommandProcessor::LogKickoffInitator(uint32_t value) {
+   cpu::backend::GuestPseudoStackTrace st;
+ 
+   if (logging::ShouldLog(LogLevel::Debug) &&
++      kernel_state_ &&
+       kernel_state_->processor()->backend()->PopulatePseudoStacktrace(&st)) {
+     logging::LoggerBatch<LogLevel::Debug> log_initiator{};
+ 
+diff --git a/emulator-core/src/main/cpp/xenia/src/xenia/gpu/command_processor.h b/emulator-core/src/main/cpp/xenia/src/xenia/gpu/command_processor.h
+index e14e9454c..cac4fa021 100644
+--- a/emulator-core/src/main/cpp/xenia/src/xenia/gpu/command_processor.h
++++ b/emulator-core/src/main/cpp/xenia/src/xenia/gpu/command_processor.h
+@@ -14,6 +14,7 @@
+ #include <cstring>
+ #include <deque>
+ #include <functional>
++#include <thread>
+ #include <memory>
+ #include <mutex>
+ #include <queue>
+@@ -836,6 +837,9 @@ class CommandProcessor {
+ 
+   std::atomic<bool> worker_running_;
+   kernel::object_ref<kernel::XHostThread> worker_thread_;
++  // Host mode (no KernelState): plain thread.
++  std::thread host_worker_thread_;
++  std::thread::id host_worker_thread_id_;
+ 
+   // Cross-thread call queue: producers push under the mutex; the worker's hot
+   // loop polls only the atomic flag.
+diff --git a/emulator-core/src/main/cpp/xenia/src/xenia/gpu/graphics_system.cc b/emulator-core/src/main/cpp/xenia/src/xenia/gpu/graphics_system.cc
+index 72857d813..1263b3e59 100644
+--- a/emulator-core/src/main/cpp/xenia/src/xenia/gpu/graphics_system.cc
++++ b/emulator-core/src/main/cpp/xenia/src/xenia/gpu/graphics_system.cc
+@@ -101,7 +101,7 @@ X_STATUS GraphicsSystem::Setup(cpu::Processor* processor,
+                                kernel::KernelState* kernel_state,
+                                ui::WindowedAppContext* app_context,
+                                bool with_presentation) {
+-  memory_ = processor->memory();
++  memory_ = processor ? processor->memory() : host_memory_;
+   processor_ = processor;
+   kernel_state_ = kernel_state;
+   app_context_ = app_context;
+@@ -166,6 +166,19 @@ X_STATUS GraphicsSystem::Setup(cpu::Processor* processor,
+ 
+   // Frame limiter thread.
+   frame_limiter_worker_running_ = true;
++  if (!kernel_state_) {
++    // Host mode: a plain thread delivering 60 Hz vblanks.
++    host_frame_limiter_thread_ = std::thread([this]() {
++      auto next = std::chrono::steady_clock::now();
++      const auto period = std::chrono::microseconds(16667);
++      while (frame_limiter_worker_running_) {
++        next += period;
++        std::this_thread::sleep_until(next);
++        MarkVblank();  // V_COUNTER is derived from the vblank cadence on read
++      }
++    });
++    return X_STATUS_SUCCESS;
++  }
+   frame_limiter_worker_thread_ =
+       kernel::object_ref<kernel::XHostThread>(new kernel::XHostThread(
+           kernel_state_, 128 * 1024, 0,
+@@ -351,6 +364,10 @@ void GraphicsSystem::Shutdown() {
+ }
+ 
+ void GraphicsSystem::StopFrameLimiter() {
++  if (host_frame_limiter_thread_.joinable()) {
++    frame_limiter_worker_running_ = false;
++    host_frame_limiter_thread_.join();
++  }
+   if (frame_limiter_worker_thread_) {
+     frame_limiter_worker_running_ = false;
+     frame_limiter_worker_thread_->Wait(0, 0, 0, nullptr);
+@@ -488,6 +505,13 @@ void GraphicsSystem::SetInterruptCallback(uint32_t callback,
+ }
+ 
+ void GraphicsSystem::DispatchInterruptCallback(uint32_t source, uint32_t cpu) {
++  if (host_interrupt_hook_) {
++    if (interrupt_callback_) {
++      host_interrupt_hook_(interrupt_callback_, interrupt_callback_data_,
++                           source, cpu);
++    }
++    return;
++  }
+   kernel_state()->EmulateCPInterruptDPC(interrupt_callback_,
+                                         interrupt_callback_data_, source, cpu);
+ }
+diff --git a/emulator-core/src/main/cpp/xenia/src/xenia/gpu/graphics_system.h b/emulator-core/src/main/cpp/xenia/src/xenia/gpu/graphics_system.h
+index bdc090d11..4fa9654ad 100644
+--- a/emulator-core/src/main/cpp/xenia/src/xenia/gpu/graphics_system.h
++++ b/emulator-core/src/main/cpp/xenia/src/xenia/gpu/graphics_system.h
+@@ -71,6 +71,16 @@ class GraphicsSystem {
+   ui::GraphicsProvider* provider() const { return provider_.get(); }
+   ui::Presenter* presenter() const { return presenter_.get(); }
+ 
++  // Recompiled-title host mode: no cpu::Processor / KernelState. The host provides guest memory
++  // and delivers GPU interrupts itself (callback, user data, source, cpu).
++  using HostInterruptHook =
++      std::function<void(uint32_t callback, uint32_t user_data, uint32_t source,
++                         uint32_t cpu)>;
++  void SetHostMode(Memory* memory, HostInterruptHook interrupt_hook) {
++    host_memory_ = memory;
++    host_interrupt_hook_ = std::move(interrupt_hook);
++  }
++
+   virtual X_STATUS Setup(cpu::Processor* processor,
+                          kernel::KernelState* kernel_state,
+                          ui::WindowedAppContext* app_context,
+@@ -161,6 +171,9 @@ class GraphicsSystem {
+ 
+   std::atomic<bool> frame_limiter_worker_running_;
+   kernel::object_ref<kernel::XHostThread> frame_limiter_worker_thread_;
++  Memory* host_memory_ = nullptr;
++  HostInterruptHook host_interrupt_hook_;
++  std::thread host_frame_limiter_thread_;
+ 
+   // Anchors for synthesizing D1MODE_V_COUNTER. last_vblank_guest_tick_ is
+   // the guest tick at the most recent MarkVblank; vblank_period_ticks_ is

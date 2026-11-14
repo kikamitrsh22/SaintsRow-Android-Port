@@ -1,0 +1,31 @@
+# Generated from the game's executable - never commit
+ppc/
+work/
+
+# Third-party tool clones (our changes live in patches/)
+tools/XenonRecomp/
+tools/XenosRecomp/
+
+# Build outputs
+*.exe
+*.obj
+*.pdb
+*.lib
+__pycache__/
+
+# Runtime build output and per-user data
+build/
+userdata/
+tools/xenia-ref/
+tools/xenia/
+build-xenia/
+build-android/
+tools/xendroid/
+
+# Android build outputs
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties
+android/app/src/main/jniLibs/
+tools/saintsreborn/
