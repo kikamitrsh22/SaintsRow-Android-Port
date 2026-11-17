@@ -1,5 +1,7 @@
 // XAM imports: memory, loader, user/profile, content (saves), notifications, UI, input.
 #include "kernel.h"
+#include <chrono>
+#include <thread>
 #include "../loader.h"
 #include "../memory.h"
 #include "../input.h"
@@ -75,7 +77,13 @@ GUEST_IMPORT(XamGetExecutionId)
 GUEST_IMPORT(XamLoaderGetLaunchDataSize) { guest::w32(ctx.r3.u32, 0); ctx.r3.u64 = 0x80070490; } // not found
 GUEST_IMPORT(XamLoaderGetLaunchData) { ctx.r3.u64 = 0x80070490; }
 GUEST_IMPORT(XamLoaderSetLaunchData) { ctx.r3.u64 = 0; }
-GUEST_IMPORT(XamLoaderTerminateTitle) { LOG("XamLoaderTerminateTitle - exiting"); std::exit(0); }
+// Saints Reborn: never let the game terminate itself (it does so on some error paths) - park the
+// calling thread instead so the rest of the game keeps running.
+GUEST_IMPORT(XamLoaderTerminateTitle)
+{
+    LOG("XamLoaderTerminateTitle - parking the calling thread");
+    for (;;) std::this_thread::sleep_for(std::chrono::seconds(1));
+}
 GUEST_IMPORT(XamLoaderLaunchTitle) { LOG("XamLoaderLaunchTitle(%s) - exiting", guest::cstr(ctx.r3.u32).c_str()); std::exit(0); }
 
 GUEST_IMPORT(XGetAVPack) { ctx.r3.u64 = 8; }        // HDMI
@@ -488,7 +496,11 @@ GUEST_IMPORT(XamInputGetState)
 }
 
 GUEST_IMPORT(XamInputSetState) { ctx.r3.u64 = ctx.r3.u32 == 0 ? ERROR_SUCCESS : ERROR_DEVICE_NOT_CONNECTED; }
-GUEST_IMPORT(XamInputGetKeystrokeEx) { ctx.r3.u64 = 0x10D2; } // ERROR_EMPTY
+GUEST_IMPORT(XamInputGetKeystrokeEx)
+{
+    TraceOnce("XamInputGetKeystrokeEx", ctx.r3.u32, ctx.r4.u32, 0x10D2);
+    ctx.r3.u64 = 0x10D2; // ERROR_EMPTY
+}
 
 // ---------------------------------------------------------------------------
 // Achievements / stats: valid but empty enumerators (no Xbox Live profile data).

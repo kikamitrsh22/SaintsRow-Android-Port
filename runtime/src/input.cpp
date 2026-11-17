@@ -1,13 +1,21 @@
 #include "input.h"
 
+#include <chrono>
+
 namespace input
 {
+    using Clock = std::chrono::steady_clock;
+
+    // The game reads the pad twice per frame and uses only the second read, so a tap must stay
+    // visible for a minimum time rather than for one read: every button press is held for at least
+    // kMinHold after it went down, even if it was released sooner.
+    constexpr auto kMinHold = std::chrono::milliseconds(100);
+
     static std::mutex s_lock;
     static PadState s_state;
+    static Clock::time_point s_pressedAt[16];
+    static uint16_t s_reported = 0;
     static uint32_t s_packet = 1;
-    // Buttons pressed since the guest last read the pad: a tap shorter than one game frame still
-    // shows up as pressed for one read.
-    static uint16_t s_latched = 0;
     static std::atomic<bool> s_connected{ true };
 
     void SetPad(const PadState& state)
@@ -15,7 +23,10 @@ namespace input
         std::lock_guard lock(s_lock);
         if (std::memcmp(&s_state, &state, sizeof(state)) != 0)
         {
-            s_latched |= uint16_t(state.buttons & ~s_state.buttons); // newly pressed
+            uint16_t pressed = uint16_t(state.buttons & ~s_state.buttons);
+            auto now = Clock::now();
+            for (int i = 0; i < 16; i++)
+                if (pressed & (1u << i)) s_pressedAt[i] = now;
             s_state = state;
             ++s_packet;
         }
@@ -24,14 +35,17 @@ namespace input
     PadState GetPad(uint32_t* packetNumber)
     {
         std::lock_guard lock(s_lock);
-        if (packetNumber) *packetNumber = s_packet;
         PadState out = s_state;
-        if (s_latched & ~out.buttons)
+        auto now = Clock::now();
+        for (int i = 0; i < 16; i++)
+            if (s_pressedAt[i] != Clock::time_point{} && now - s_pressedAt[i] < kMinHold)
+                out.buttons |= uint16_t(1u << i);
+        if (out.buttons != s_reported)
         {
-            out.buttons |= s_latched;   // report the missed tap once...
-            ++s_packet;                 // ...and make the following read a new packet (released)
+            s_reported = out.buttons;
+            ++s_packet; // the state the guest sees changed
         }
-        s_latched = 0;
+        if (packetNumber) *packetNumber = s_packet;
         return out;
     }
 

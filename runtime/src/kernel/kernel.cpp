@@ -102,6 +102,13 @@ namespace kernel
         s_guestObjects[addr] = std::move(obj);
     }
 
+    std::shared_ptr<Object> FindGuestObject(uint32_t addr)
+    {
+        std::lock_guard lock(s_guestObjLock);
+        auto it = s_guestObjects.find(addr);
+        return it != s_guestObjects.end() ? it->second : nullptr;
+    }
+
     void ForgetGuestObject(uint32_t addr)
     {
         std::lock_guard lock(s_guestObjLock);

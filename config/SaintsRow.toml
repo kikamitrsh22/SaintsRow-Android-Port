@@ -35,8 +35,14 @@ functions = [
     { address = 0x820D8168, size = 0x128 },
     { address = 0x8210EB48, size = 0xD4 },
     { address = 0x821143B8, size = 0x254 },
-    { address = 0x8216DA08, size = 0x480 },
-    { address = 0x8216DE88, size = 0x2A0 },
+    # 0x8216DC18 / 0x8216DF58 are separate functions reached only by tail calls (b) from the
+    # "is action pressed" helpers; merged into their neighbours they made those helpers return garbage.
+    { address = 0x8216DA08, size = 0x210 },
+    { address = 0x8216DC18, size = 0x270 },
+    { address = 0x8216DE88, size = 0xD0 },
+    { address = 0x8216DF58, size = 0x1D0 },
+    # One function the analyser chopped into fragments (branches between them were dropped).
+    { address = 0x821FC178, size = 0x70 },
     { address = 0x8216E128, size = 0x210 },
     { address = 0x8216F128, size = 0x1EC },
     { address = 0x8216F318, size = 0x1EC },
@@ -108,3 +114,23 @@ functions = [
     { address = 0x826FF394, size = 0x28 },
     { address = 0x8270C318, size = 0x18 },
 ]
+
+# sub_8265F4F0 (streaming list filter): byte loads that bound the following loops. Keep them 8-bit
+# (Saints Reborn). Implemented in runtime/src/game/overrides.cpp.
+[[midasm_hook]]
+name = "SrClampByteR10"
+address = 0x8265F50C
+registers = ["r10"]
+after_instruction = true
+
+[[midasm_hook]]
+name = "SrClampByteR7"
+address = 0x8265F554
+registers = ["r7"]
+after_instruction = true
+
+[[midasm_hook]]
+name = "SrClampByteR8"
+address = 0x8265F660
+registers = ["r8"]
+after_instruction = true

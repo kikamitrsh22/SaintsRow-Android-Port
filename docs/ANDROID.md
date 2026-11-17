@@ -49,3 +49,12 @@ adb pull /sdcard/Android/data/com.saintsrow.port/files/userdata/saintsrow.log
 ```
 
 Save data and caches live in `files/userdata/`.
+
+## Custom Vulkan driver (Turnip) and GPU settings
+
+- **Driver:** put an adrenotools driver package (unzipped: `meta.json` + the driver `.so`, e.g.
+  `libvulkan_freedreno.so`) in `Android/data/com.saintsrow.port/files/driver/`. At start the app
+  copies it to private storage and loads it through adrenotools; logcat tag `SaintsRowGPU` prints
+  `Vulkan driver: <path>` or `system`. Empty the folder to return to the system driver.
+- **Settings:** `files/userdata/gpu.toml` holds Xenia GPU cvars (`name = value` per line), applied
+  before the GPU starts - useful to try settings without rebuilding.

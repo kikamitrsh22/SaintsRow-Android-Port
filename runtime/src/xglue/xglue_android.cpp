@@ -4,6 +4,7 @@
 #include "xglue.h"
 #include "xglue_internal.h"
 
+#include <android/log.h>
 #include <android/native_window.h>
 
 #include <atomic>
@@ -11,13 +12,19 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 
+#include "xenia/base/cvar.h"
 #include "xenia/base/logging.h"
 #include "xenia/gpu/vulkan/vulkan_graphics_system.h"
 #include "xenia/ui/surface_android.h"
 #include "xenia/ui/window.h"
 #include "xenia/ui/windowed_app_context.h"
+
+DECLARE_string(vulkan_lib_path);
+
+extern std::string g_native_lib_dir;
 
 namespace xglue
 {
@@ -145,6 +152,43 @@ namespace xglue
         if (s_nativeWindow) ANativeWindow_acquire(s_nativeWindow);
     }
 
+    // Optional GPU settings file (TOML, `name = value` per line, Xenia cvar names) so settings can
+    // be tried without rebuilding: <userdata>/gpu.toml.
+    static std::string s_gpuConfigFile;
+    void SetGpuConfigFile(const char* path) { s_gpuConfigFile = path ? path : ""; }
+
+    void SetCustomDriver(const char* nativeLibDir, const char* driverLibrary)
+    {
+        g_native_lib_dir = nativeLibDir ? nativeLibDir : "";
+        cvars::vulkan_lib_path = driverLibrary ? driverLibrary : "";
+        __android_log_print(ANDROID_LOG_INFO, "SaintsRowGPU", "Vulkan driver: %s",
+            cvars::vulkan_lib_path.empty() ? "system" : cvars::vulkan_lib_path.c_str());
+    }
+
+    static void ApplyGpuConfig()
+    {
+        if (s_gpuConfigFile.empty() || !cvar::ConfigVars) return;
+        toml::table parsed;
+        try { parsed = toml::parse_file(s_gpuConfigFile); }
+        catch (const std::exception&)
+        {
+            __android_log_print(ANDROID_LOG_INFO, "SaintsRowGPU", "no usable %s", s_gpuConfigFile.c_str());
+            return;
+        }
+        for (auto&& [key, value] : parsed)
+        {
+            std::string name(key.str());
+            auto it = cvar::ConfigVars->find(name);
+            if (it == cvar::ConfigVars->end())
+            {
+                __android_log_print(ANDROID_LOG_WARN, "SaintsRowGPU", "gpu.toml: unknown setting %s", name.c_str());
+                continue;
+            }
+            it->second->LoadConfigValue(&value);
+            __android_log_print(ANDROID_LOG_INFO, "SaintsRowGPU", "gpu.toml: %s applied", name.c_str());
+        }
+    }
+
     bool InitGraphics(InterruptHook hook)
     {
         s_app = std::make_unique<AppContext>();
@@ -152,6 +196,8 @@ namespace xglue
         s_window = std::make_unique<AndroidWindow>(*s_app, "Saints Row", 1280, 720);
         if (!s_window->Open())
             return false;
+
+        ApplyGpuConfig();
 
         s_gpu = std::make_unique<xe::gpu::vulkan::VulkanGraphicsSystem>();
         s_gpu->SetHostMode(XMemory(), std::move(hook));

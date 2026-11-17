@@ -51,4 +51,9 @@ namespace xglue
 
     // VdSwap: writes the swap packets into the 64 dwords the game reserved in the ring buffer.
     void WriteSwapPackets(uint32_t bufferPtr, uint32_t fetchPtr, uint32_t frontBufferPtr, uint32_t width, uint32_t height);
+    // Android: optional TOML file with Xenia GPU settings, read by InitGraphics.
+    void SetGpuConfigFile(const char* path);
+    // Android: the app's native library folder (adrenotools hooks) and an optional custom Vulkan
+    // driver library ("" = system driver). Call before InitGraphics.
+    void SetCustomDriver(const char* nativeLibDir, const char* driverLibrary);
 }

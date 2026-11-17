@@ -29,6 +29,13 @@ namespace xglue
         s_memory = std::make_unique<xe::Memory>();
         if (!s_memory->Initialize())
             return nullptr;
+        // Like Saints Reborn: guest 0x00000000-0x00FFFFFF is zeroed read/write memory, so reads
+        // through null pointers with large offsets return 0 instead of faulting. Xenia's
+        // protect_zero=false only maps the first 64 KB.
+        if (auto* low = s_memory->LookupHeap(0x10000))
+            low->AllocFixed(0x10000, 0x01000000 - 0x10000, 0x1000,
+                xe::kMemoryAllocationReserve | xe::kMemoryAllocationCommit,
+                xe::kMemoryProtectRead | xe::kMemoryProtectWrite);
         std::fputs("[xglue] memory ready\n", stderr);
         return s_memory->virtual_membase();
     }

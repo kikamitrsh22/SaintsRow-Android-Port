@@ -10,6 +10,12 @@ public final class NativeBridge {
 
     private NativeBridge() {}
 
+    /**
+     * Call before {@link #start}: where the app's native libraries are, and the custom Vulkan
+     * driver library to load through adrenotools (empty = the system driver).
+     */
+    public static native void setDriver(String nativeLibDir, String driverLibrary);
+
     /** Boots the game once: guest memory, XEX load, Vulkan GPU, then the game's main thread. */
     public static native void start(String gameDir, String userDir, Surface surface);
 

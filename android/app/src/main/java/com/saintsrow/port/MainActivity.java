@@ -16,6 +16,11 @@ import android.view.WindowManager;
 import android.widget.TextView;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Full-screen Vulkan surface for the game. Game files are read from the app's external files
@@ -49,6 +54,62 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         view.getHolder().addCallback(this);
         setContentView(view);
         hideSystemBars();
+    }
+
+    /**
+     * Optional custom Vulkan driver (an adrenotools package such as Turnip: meta.json plus the
+     * driver .so) placed in Android/data/com.saintsrow.port/files/driver. Libraries can only be
+     * loaded from the app's private storage, so the folder is copied there first.
+     *
+     * @return the path of the driver library to load, or "" for the system driver.
+     */
+    private String prepareCustomDriver() {
+        try {
+            File source = new File(getExternalFilesDir(null), "driver");
+            File target = new File(getFilesDir(), "driver");
+            source.mkdirs();
+            String library = null;
+            File meta = new File(source, "meta.json");
+            if (meta.isFile()) {
+                String json = new String(readAll(meta), StandardCharsets.UTF_8);
+                Matcher m = Pattern.compile("\"libraryName\"\\s*:\\s*\"([^\"/]+)\"").matcher(json);
+                if (m.find()) library = m.group(1);
+            }
+            File[] files = source.listFiles();
+            if (library == null && files != null) {
+                for (File f : files) if (f.getName().endsWith(".so")) library = f.getName();
+            }
+            if (library == null || !new File(source, library).isFile()) {
+                Log.i(TAG, "no custom Vulkan driver in " + source + ", using the system driver");
+                return "";
+            }
+            target.mkdirs();
+            for (File f : files) {
+                if (!f.isFile()) continue;
+                File out = new File(target, f.getName());
+                if (out.length() == f.length() && out.lastModified() >= f.lastModified()) continue;
+                try (FileOutputStream os = new FileOutputStream(out)) { os.write(readAll(f)); }
+            }
+            File lib = new File(target, library);
+            Log.i(TAG, "custom Vulkan driver: " + lib);
+            return lib.getAbsolutePath();
+        } catch (Exception e) {
+            Log.w(TAG, "custom Vulkan driver not usable, using the system driver", e);
+            return "";
+        }
+    }
+
+    private static byte[] readAll(File f) throws java.io.IOException {
+        byte[] data = new byte[(int) f.length()];
+        try (FileInputStream in = new FileInputStream(f)) {
+            int off = 0;
+            while (off < data.length) {
+                int n = in.read(data, off, data.length - off);
+                if (n < 0) break;
+                off += n;
+            }
+        }
+        return data;
     }
 
     private void showMissingGame() {
@@ -97,6 +158,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (!started) {
             started = true;
             Log.i(TAG, "starting: game=" + gameDir + " user=" + userDir);
+            NativeBridge.setDriver(getApplicationInfo().nativeLibraryDir, prepareCustomDriver());
             NativeBridge.start(gameDir.getAbsolutePath(), userDir.getAbsolutePath(), holder.getSurface());
         } else {
             NativeBridge.surfaceChanged(holder.getSurface());

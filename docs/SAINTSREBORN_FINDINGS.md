@@ -18,6 +18,10 @@ hang us. Addresses are guest addresses in our build.
 
 ## P1 — likely crashes / hangs
 
+**Status: all seven applied** (`runtime/src/game/overrides.cpp`, `ppc_indirect.h`, `imports_ke.cpp`,
+`imports_xam.cpp`, `xglue_memory.cpp`, mid-asm hooks in `config/SaintsRow.toml`). With them the
+Odin 3 gets from New Game through player creation into the city.
+
 1. **Near-null memory is only 64 KB.** They commit guest `0x00000000–0x00FFFFFF` (16 MB) as zeroed
    RW memory and also skip faulting near-null reads. Xenia's `protect_zero=false` maps 64 KB, so a
    read of `null + 0x10000` or more still kills us. Fix: `AllocFixed(0, 0x1000000)` in the low heap.
@@ -64,3 +68,19 @@ hang us. Addresses are guest addresses in our build.
 - Their GPU fixes (nested IB ring wrap, WAIT_REG_MEM deadlock, white unbound textures, occlusion
   queries) target ReXGlue's fork; Xenia/Xendroid's command processor already handles nested IBs and
   waits, but occlusion queries ("lights through walls") may need the `sub_825D4748` override later.
+
+## Found while testing (not from Saints Reborn)
+
+- **Game pauses by itself.** Two functions reached only by tail calls (`0x8216DC18`, `0x8216DF58`)
+  were merged into their neighbours by our explicit function bounds, so the recompiler dropped the
+  tail call from the "is action pressed" helpers (`// ERROR` in the generated code) and they
+  returned garbage - the game saw Start as pressed. Fixed in `config/SaintsRow.toml`;
+  `tools/check_split.py` checks whether a function can be split at an address. The remaining
+  `// ERROR` targets (`0x8270F...`-`0x8271B...`) are exception funclets in the system library.
+- **The game reads the pad twice per frame** and uses only the second read, so a tap must be held
+  for a minimum time rather than for one read (`runtime/src/input.cpp`).
+- **Occlusion queries are fine.** The device's "direct" bit is 0 in our port, so the original
+  `sub_825D4748` already reads real results; no override needed.
+- **Blocky / leaking building shadows on Android** are a bug of the stock Adreno 830 driver, not of
+  the port: correct on Windows (Vulkan) and on the Odin 3 with a Turnip driver (see
+  `docs/ANDROID.md`).

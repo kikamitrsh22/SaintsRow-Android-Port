@@ -101,6 +101,8 @@ namespace kernel
     std::shared_ptr<Object> GetGuestObject(uint32_t addr);
     void RegisterGuestObject(uint32_t addr, std::shared_ptr<Object> obj);
     void ForgetGuestObject(uint32_t addr);
+    // Existing host object for a guest address, or null (never creates one).
+    std::shared_ptr<Object> FindGuestObject(uint32_t addr);
     template <typename T> std::shared_ptr<T> GetGuestObjectAs(uint32_t addr)
     {
         return std::dynamic_pointer_cast<T>(GetGuestObject(addr));

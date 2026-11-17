@@ -3,18 +3,23 @@
 #include "guest.h"
 #include "kernel/kernel.h"
 
-extern "C" [[noreturn]] void PPCIndirectCallFailed(unsigned int target, unsigned int lr)
+#include <mutex>
+#include <set>
+
+// Called by PPC_CALL_INDIRECT_FUNC when the target has no recompiled function. The call is skipped
+// (r3 = 0); each (target, caller) pair is logged once.
+extern "C" void PPCIndirectCallFailed(unsigned int target, unsigned int lr)
 {
-    auto* t = kernel::CurrentThread();
-    rt::Log("FATAL: indirect call to %08X has no recompiled function (lr=%08X, thread %u)", target, lr,
-        t ? t->id : 0);
-    if (t && t->ctx)
+    static std::mutex s_lock;
+    static std::set<uint64_t> s_seen;
     {
-        auto& c = *t->ctx;
-        rt::Log("  r1=%08X r3=%08X r4=%08X r5=%08X r11=%08X r12=%08X", c.r1.u32, c.r3.u32, c.r4.u32, c.r5.u32,
-            c.r11.u32, c.r12.u32);
+        std::lock_guard lock(s_lock);
+        if (!s_seen.insert((uint64_t(target) << 32) | lr).second) return;
+        if (s_seen.size() > 256) return; // stop logging after a while
     }
-    std::_Exit(4);
+    auto* t = kernel::CurrentThread();
+    rt::Log("indirect call to %08X has no recompiled function - skipped (lr=%08X, thread %u)", target, lr,
+        t ? t->id : 0);
 }
 
 #ifdef _WIN32

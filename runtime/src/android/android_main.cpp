@@ -69,6 +69,7 @@ static void UiThreadMain(std::string gameDir, std::string userDir)
     vfs::Init(gameDir, userDir);
     if (!loader::Load(std::filesystem::path(gameDir) / "default.xex"))
         return;
+    xglue::SetGpuConfigFile((std::filesystem::path(userDir) / "gpu.toml").string().c_str());
     if (!xglue::InitGraphics(gpu::DispatchInterrupt))
     {
         LOG("failed to initialize Vulkan");
@@ -83,6 +84,12 @@ static void UiThreadMain(std::string gameDir, std::string userDir)
     game.detach();
     xglue::RunUiLoop();
     LOG("UI loop exited");
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_saintsrow_port_NativeBridge_setDriver(
+    JNIEnv* env, jclass, jstring nativeLibDir, jstring driverLibrary)
+{
+    xglue::SetCustomDriver(JStr(env, nativeLibDir).c_str(), JStr(env, driverLibrary).c_str());
 }
 
 extern "C" JNIEXPORT void JNICALL Java_com_saintsrow_port_NativeBridge_start(

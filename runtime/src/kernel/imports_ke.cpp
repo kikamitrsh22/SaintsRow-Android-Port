@@ -109,7 +109,22 @@ GUEST_IMPORT(KeInitializeSemaphore)
     guest::w32(s + 8, s + 8);  // empty wait list
     guest::w32(s + 12, s + 8);
     guest::w32(s + 0x10, ctx.r5.u32);
-    RegisterGuestObject(s, std::make_shared<Semaphore>(int32_t(ctx.r4.u32), int32_t(ctx.r5.u32)));
+    int32_t count = int32_t(ctx.r4.u32), limit = int32_t(ctx.r5.u32);
+
+    // The game re-initialises its IO semaphores in place while threads are already waiting on them.
+    // Replacing the host object would orphan those waiters, so keep it and reset its state instead
+    // (Saints Reborn: a re-init with count 0 gets 2 so the parked IO threads make progress).
+    if (auto existing = std::dynamic_pointer_cast<Semaphore>(FindGuestObject(s)))
+    {
+        if (count == 0) count = 2;
+        if (limit > 0 && count > limit) count = limit;
+        std::lock_guard lock(g_lock);
+        existing->limit = limit;
+        existing->count = count;
+        g_cv.notify_all();
+        return;
+    }
+    RegisterGuestObject(s, std::make_shared<Semaphore>(count, limit));
 }
 
 GUEST_IMPORT(KeReleaseSemaphore)
