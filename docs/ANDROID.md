@@ -93,3 +93,10 @@ counter the whole game ran at 0.385x speed. The Havok step is set from the game'
 
 The Odin 3's performance mode and temperature cap the CPU (Normal mode: 1.15 / 1.96 GHz); when it
 throttles, the city drops toward 45 fps.
+
+Occlusion queries (car light coronas): `occlusion_query = "fast-alt"` by default. Xendroid's "fast"
+reports unanswered queries as visible, so lights showed through walls; "strict" hides them but waits
+on the GPU every frame (the city at night fell to ~30 fps); "fast-alt" reuses the last result.
+The `gpu:` log line counts frames over 20 / 33 ms and the longest frame every 5 s.
+
+Saves live in `files/userdata/save/<content name>/` (one folder per save, as the game names it).

@@ -53,6 +53,18 @@ namespace xglue
     void WriteSwapPackets(uint32_t bufferPtr, uint32_t fetchPtr, uint32_t frontBufferPtr, uint32_t width, uint32_t height);
     // Android: optional TOML file with Xenia GPU settings, read by InitGraphics.
     void SetGpuConfigFile(const char* path);
+    // Frame rate cap (30 / 60 / 120): the guest vblank rate the game presents on. Any time.
+    void SetFrameRateCap(int hz);
+    // Current cap (0 = none on this platform).
+    int FrameRateCap();
+    // Post-processing anti-aliasing: 0 off, 1 FXAA, 2 FXAA extreme. Any time.
+    void SetAntiAliasing(int mode);
+    // Frame generation (Xendroid's ZeroFG): 0 off, 1 on. Read when the presenter starts, so call it
+    // before InitGraphics; later changes take effect on the next start.
+    void SetFrameGeneration(int mode);
+    // Render resolution scale (1 = the game's 1280x720, 2 = 2560x1440, 3 = 3840x2160). Read when
+    // the GPU starts: call before InitGraphics; later changes take effect on the next start.
+    void SetResolutionScale(int scale);
     // Android: the app's native library folder (adrenotools hooks) and an optional custom Vulkan
     // driver library ("" = system driver). Call before InitGraphics.
     void SetCustomDriver(const char* nativeLibDir, const char* driverLibrary);

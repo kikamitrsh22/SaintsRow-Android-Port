@@ -13,6 +13,12 @@
 
 namespace xglue
 {
+    // Windows: the vblank rate stays at 60 Hz (the patched Xenia here has no setter yet).
+    void SetFrameRateCap(int) {}
+    int FrameRateCap() { return 0; }
+    void SetAntiAliasing(int) {}
+    void SetFrameGeneration(int) {}
+    void SetResolutionScale(int) {}
     static std::unique_ptr<xe::ui::Win32WindowedAppContext> s_app;
     static std::unique_ptr<xe::ui::Window> s_window;
     static std::unique_ptr<xe::gpu::vulkan::VulkanGraphicsSystem> s_gpu;

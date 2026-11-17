@@ -8,6 +8,7 @@
 #include <android/native_window.h>
 
 #include <atomic>
+#include <filesystem>
 #include <chrono>
 #include <condition_variable>
 #include <memory>
@@ -24,6 +25,13 @@
 #include "xenia/ui/windowed_app_context.h"
 
 DECLARE_string(vulkan_lib_path);
+DECLARE_string(occlusion_query);
+DECLARE_uint32(framerate_limit);
+DECLARE_string(zerofg_mode);
+DECLARE_path(storage_root);
+DECLARE_bool(vulkan_log_debug_messages);
+DECLARE_int32(draw_resolution_scale_x);
+DECLARE_int32(draw_resolution_scale_y);
 
 extern std::string g_native_lib_dir;
 
@@ -164,6 +172,45 @@ namespace xglue
         return new xe::apu::aaudio::AAudioAudioDriver(memory, semaphore, 48000, 6, true);
     }
 
+    // The frame rate is held by Xenia's swap limiter (framerate_limit, read on every swap); the
+    // guest vblank goes to 120 Hz for the 120 cap so nothing in the game waits on a 60 Hz one.
+    static std::atomic<int> s_fpsCap{ 60 };
+    void SetFrameRateCap(int hz)
+    {
+        s_fpsCap = hz;
+        cvars::framerate_limit = uint32_t(hz);
+        if (auto* gpu = static_cast<xe::gpu::GraphicsSystem*>(g_gpu)) gpu->SetHostVblankRate(hz > 60 ? uint32_t(hz) : 60);
+        __android_log_print(ANDROID_LOG_INFO, "SaintsRowGPU", "frame rate cap: %d", hz);
+    }
+
+    int FrameRateCap() { return s_fpsCap.load(); }
+
+    static std::atomic<int> s_antiAliasing{ 0 };
+    void SetAntiAliasing(int mode)
+    {
+        s_antiAliasing = mode;
+        using Effect = xe::gpu::CommandProcessor::SwapPostEffect;
+        const Effect effect = mode == 2 ? Effect::kFxaaExtreme : mode == 1 ? Effect::kFxaa : Effect::kNone;
+        if (g_gpu && g_gpu->command_processor()) g_gpu->command_processor()->SetDesiredSwapPostEffect(effect);
+        __android_log_print(ANDROID_LOG_INFO, "SaintsRowGPU", "anti-aliasing: %s",
+            mode == 2 ? "FXAA extreme" : mode == 1 ? "FXAA" : "off");
+    }
+
+    static int s_resolutionScale = 1;
+    void SetResolutionScale(int scale)
+    {
+        s_resolutionScale = scale < 1 ? 1 : scale > 3 ? 3 : scale;
+        __android_log_print(ANDROID_LOG_INFO, "SaintsRowGPU", "render resolution: %dx%d (scale %d)",
+            1280 * s_resolutionScale, 720 * s_resolutionScale, s_resolutionScale);
+    }
+
+    static int s_frameGeneration = 0;
+    void SetFrameGeneration(int mode)
+    {
+        s_frameGeneration = mode;
+        __android_log_print(ANDROID_LOG_INFO, "SaintsRowGPU", "frame generation: %s", mode ? "ZeroFG" : "off");
+    }
+
     void SetCustomDriver(const char* nativeLibDir, const char* driverLibrary)
     {
         g_native_lib_dir = nativeLibDir ? nativeLibDir : "";
@@ -204,6 +251,24 @@ namespace xglue
         if (!s_window->Open())
             return false;
 
+        // Occlusion queries: Xendroid's default "fast" mode reports "visible" while the GPU has not
+        // answered yet, so car light coronas showed through walls. "strict" waits for the real
+        // result and hides them, but stalled the city at night to ~30 fps (797 frames over 33 ms in
+        // 50 s). "fast-alt" keeps the last result for unanswered queries, so occluded lights stay
+        // hidden without waiting: 60 fps, no frame over 33 ms. gpu.toml can still override it.
+        cvars::occlusion_query = "fast-alt";
+        // Frame generation: ZeroFG picks its mode when the presenter is built. Its build guard keeps
+        // a record in storage_root (a driver that crashed building its pipelines keeps it off).
+        cvars::zerofg_mode = s_frameGeneration ? "zero" : "off";
+        // Xenia's logging is not initialised in the port: a Vulkan debug message from the driver
+        // (Turnip sends some with frame generation on) crashed in the logger. No debug messenger.
+        cvars::vulkan_log_debug_messages = false;
+        // Render resolution: Xenia scales the game's render targets (needs sparse binding; the GPU
+        // clamps to what the device supports).
+        cvars::draw_resolution_scale_x = s_resolutionScale;
+        cvars::draw_resolution_scale_y = s_resolutionScale;
+        if (!s_gpuConfigFile.empty())
+            cvars::storage_root = std::filesystem::path(s_gpuConfigFile).parent_path();
         ApplyGpuConfig();
 
         s_gpu = std::make_unique<xe::gpu::vulkan::VulkanGraphicsSystem>();
@@ -216,6 +281,8 @@ namespace xglue
         s_window->SetPresenter(s_gpu->presenter());
         s_window->SurfaceChanged(true);
         g_gpu = s_gpu.get();
+        SetFrameRateCap(s_fpsCap.load());
+        SetAntiAliasing(s_antiAliasing.load());
         return true;
     }
 

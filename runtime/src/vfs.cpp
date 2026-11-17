@@ -20,6 +20,8 @@ namespace vfs
         LOG("vfs: game=%s user=%s", s_game.string().c_str(), s_user.string().c_str());
     }
 
+    std::filesystem::path SaveDir() { return s_user / "save"; }
+
     static std::string Lower(std::string s)
     {
         std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return char(std::tolower(c)); });

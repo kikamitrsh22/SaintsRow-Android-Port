@@ -92,6 +92,36 @@ static void UiThreadMain(std::string gameDir, std::string userDir)
     LOG("UI loop exited");
 }
 
+// Performance overlay: out[0..4] = fps, average ms, 1% low ms (99th percentile), max ms, frames,
+// over the last `windowMs` of game frames.
+extern "C" JNIEXPORT void JNICALL Java_com_saintsrow_port_NativeBridge_getFrameStats(
+    JNIEnv* env, jclass, jint windowMs, jfloatArray out)
+{
+    gpu::FrameStats st = gpu::GetFrameStats(int(windowMs));
+    float v[5] = { st.fps, st.avgMs, st.p99Ms, st.maxMs, float(st.frames) };
+    if (out && env->GetArrayLength(out) >= 5) env->SetFloatArrayRegion(out, 0, 5, v);
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_saintsrow_port_NativeBridge_setFpsCap(JNIEnv*, jclass, jint fps)
+{
+    xglue::SetFrameRateCap(int(fps));
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_saintsrow_port_NativeBridge_setAntiAliasing(JNIEnv*, jclass, jint mode)
+{
+    xglue::SetAntiAliasing(int(mode));
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_saintsrow_port_NativeBridge_setFrameGeneration(JNIEnv*, jclass, jint mode)
+{
+    xglue::SetFrameGeneration(int(mode));
+}
+
+extern "C" JNIEXPORT void JNICALL Java_com_saintsrow_port_NativeBridge_setResolutionScale(JNIEnv*, jclass, jint scale)
+{
+    xglue::SetResolutionScale(int(scale));
+}
+
 extern "C" JNIEXPORT void JNICALL Java_com_saintsrow_port_NativeBridge_setDriver(
     JNIEnv* env, jclass, jstring nativeLibDir, jstring driverLibrary)
 {

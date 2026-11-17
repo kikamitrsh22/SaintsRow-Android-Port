@@ -328,7 +328,7 @@ GUEST_IMPORT(XamContentCreate)
     std::string root = guest::cstr(ctx.r4.u32);
     std::string file = ContentFileName(ctx.r5.u32);
     uint32_t flags = ctx.r6.u32;
-    std::filesystem::path host = std::filesystem::current_path() / "userdata" / "save" / file;
+    std::filesystem::path host = vfs::SaveDir() / file;
     std::error_code ec;
     bool existed = std::filesystem::exists(host, ec);
     uint32_t disposition = flags & 0xF; // 1 CREATE_NEW, 2 CREATE_ALWAYS, 3 OPEN_EXISTING, 4 OPEN_ALWAYS
@@ -357,7 +357,7 @@ GUEST_IMPORT(XamContentDelete)
 {
     std::string file = ContentFileName(ctx.r4.u32);
     std::error_code ec;
-    std::filesystem::remove_all(std::filesystem::current_path() / "userdata" / "save" / file, ec);
+    std::filesystem::remove_all(vfs::SaveDir() / file, ec);
     ctx.r3.u64 = CompleteOverlapped(ctx.r5.u32, ERROR_SUCCESS);
 }
 
@@ -374,7 +374,7 @@ GUEST_IMPORT(XamContentCreateEnumerator)
     constexpr uint32_t kItem = 0x134; // sizeof(XCONTENT_DATA)
     auto e = std::make_shared<Enumerator>();
     std::error_code ec;
-    for (auto& d : std::filesystem::directory_iterator(std::filesystem::current_path() / "userdata" / "save", ec))
+    for (auto& d : std::filesystem::directory_iterator(vfs::SaveDir(), ec))
     {
         if (!d.is_directory(ec)) continue;
         std::vector<uint8_t> item(kItem, 0);

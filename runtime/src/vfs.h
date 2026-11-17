@@ -12,6 +12,8 @@
 namespace vfs
 {
     void Init(const std::filesystem::path& gameDir, const std::filesystem::path& userDir);
+    // Host folder for saves (content created with XamContentCreate): <userDir>/save.
+    std::filesystem::path SaveDir();
 
     // Dynamic devices such as "save:" created by XamContentCreate.
     void AddMount(const std::string& rootName, const std::filesystem::path& hostDir);
