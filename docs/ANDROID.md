@@ -58,3 +58,13 @@ Save data and caches live in `files/userdata/`.
   `Vulkan driver: <path>` or `system`. Empty the folder to return to the system driver.
 - **Settings:** `files/userdata/gpu.toml` holds Xenia GPU cvars (`name = value` per line), applied
   before the GPU starts - useful to try settings without rebuilding.
+
+## Audio
+
+The game mixes in software and needs the console's XMA hardware decoder. `runtime/src/audio.cpp`
+runs one host thread per XAudio render client that calls the game's mixer whenever the output has
+room for a frame (6 x 256 big-endian floats); `runtime/src/xglue/xglue_audio.cpp` holds Xenia's XMA
+decoder and the output device. On Android the decoder is compiled in host mode
+(`XE_APU_HOST_MODE`, part of `patches/xendroid-recomp-host-mode.patch`: std::thread worker, no
+guest CPU) with FFmpeg, and the output is Xendroid's AAudio driver. Windows is still silent
+(`xglue_audio_none.cpp`): its Xenia build has no APU / FFmpeg yet.

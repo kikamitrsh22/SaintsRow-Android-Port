@@ -1,3 +1,142 @@
+diff --git a/emulator-core/src/main/cpp/xenia/src/xenia/apu/xma_decoder.cc b/emulator-core/src/main/cpp/xenia/src/xenia/apu/xma_decoder.cc
+index 8fd7911a2..b97c3ab0f 100644
+--- a/emulator-core/src/main/cpp/xenia/src/xenia/apu/xma_decoder.cc
++++ b/emulator-core/src/main/cpp/xenia/src/xenia/apu/xma_decoder.cc
+@@ -28,10 +28,12 @@
+ #include "xenia/base/profiling.h"
+ #include "xenia/base/ring_buffer.h"
+ #include "xenia/base/string_buffer.h"
++#if !XE_APU_HOST_MODE
+ #include "xenia/cpu/processor.h"
+ #include "xenia/cpu/thread_state.h"
+ #include "xenia/kernel/kernel_state.h"
+ #include "xenia/kernel/xthread.h"
++#endif
+ extern "C" {
+ #include "third_party/FFmpeg/libavutil/log.h"
+ }  // extern "C"
+@@ -93,8 +95,10 @@ UPDATE_from_string(xma_decoder, 2026, 2, 16, 12, "old");
+ namespace xe {
+ namespace apu {
+ 
++#if !XE_APU_HOST_MODE
+ XmaDecoder::XmaDecoder(cpu::Processor* processor)
+     : memory_(processor->memory()), processor_(processor) {}
++#endif
+ 
+ XmaDecoder::~XmaDecoder() = default;
+ 
+@@ -158,8 +162,21 @@ X_STATUS XmaDecoder::Setup(kernel::KernelState* kernel_state) {
+   // The Xbox 360 kernel allocates the contexts with X_PAGE_NOCACHE |
+   // X_PAGE_READWRITE and writes MmGetPhysicalAddress for the address to the
+   // register.
++#if XE_APU_HOST_MODE
++  {
++    uint32_t address = 0;
++    if (memory()->LookupHeapByType(true, 64 * 1024)->AllocSystemHeap(
++            sizeof(XMA_CONTEXT_DATA) * kContextCount, 256,
++            kMemoryAllocationReserve | kMemoryAllocationCommit,
++            kMemoryProtectRead | kMemoryProtectWrite, false, &address)) {
++      memory()->Zero(address, sizeof(XMA_CONTEXT_DATA) * kContextCount);
++    }
++    context_data_first_ptr_ = address;
++  }
++#else
+   context_data_first_ptr_ = memory()->SystemHeapAlloc(
+       sizeof(XMA_CONTEXT_DATA) * kContextCount, 256, kSystemHeapPhysical);
++#endif
+   context_data_last_ptr_ =
+       context_data_first_ptr_ + (sizeof(XMA_CONTEXT_DATA) * kContextCount - 1);
+   register_file_[XmaRegister::ContextArrayAddress] =
+@@ -194,6 +211,11 @@ X_STATUS XmaDecoder::Setup(kernel::KernelState* kernel_state) {
+   worker_running_ = true;
+   work_event_ = xe::threading::Event::CreateAutoResetEvent(false);
+   assert_not_null(work_event_);
++#if XE_APU_HOST_MODE
++  worker_thread_ = std::thread([this]() { WorkerThreadMain(); });
++  return X_STATUS_SUCCESS;
++#endif
++#if !XE_APU_HOST_MODE
+   worker_thread_ =
+       kernel::object_ref<kernel::XHostThread>(new kernel::XHostThread(
+           kernel_state, 128 * 1024, 0,
+@@ -211,6 +233,7 @@ X_STATUS XmaDecoder::Setup(kernel::KernelState* kernel_state) {
+   worker_thread_->Create();
+ 
+   return X_STATUS_SUCCESS;
++#endif
+ }
+ 
+ void XmaDecoder::WorkerThreadMain() {
+@@ -339,11 +362,17 @@ void XmaDecoder::Shutdown() {
+     Resume();
+   }
+ 
++#if XE_APU_HOST_MODE
++  if (worker_thread_.joinable()) {
++    worker_thread_.join();
++  }
++#else
+   if (worker_thread_) {
+     // Wait for work thread.
+     xe::threading::Wait(worker_thread_->thread(), false);
+     worker_thread_.reset();
+   }
++#endif
+ 
+   if (context_data_first_ptr_) {
+     memory()->SystemHeapFree(context_data_first_ptr_);
+diff --git a/emulator-core/src/main/cpp/xenia/src/xenia/apu/xma_decoder.h b/emulator-core/src/main/cpp/xenia/src/xenia/apu/xma_decoder.h
+index 02b55a34b..bee6a60d0 100644
+--- a/emulator-core/src/main/cpp/xenia/src/xenia/apu/xma_decoder.h
++++ b/emulator-core/src/main/cpp/xenia/src/xenia/apu/xma_decoder.h
+@@ -17,7 +17,21 @@
+ #include "xenia/apu/xma_context.h"
+ #include "xenia/apu/xma_register_file.h"
+ #include "xenia/base/bit_map.h"
++#if XE_APU_HOST_MODE
++#include <thread>
++#include "xenia/base/threading.h"
++#include "xenia/memory.h"
++namespace xe {
++namespace cpu {
++class Processor;
++}
++namespace kernel {
++class KernelState;
++}
++}  // namespace xe
++#else
+ #include "xenia/kernel/xthread.h"
++#endif
+ #include "xenia/xbox.h"
+ 
+ namespace xe {
+@@ -27,7 +41,12 @@ struct XMA_CONTEXT_DATA;
+ 
+ class XmaDecoder {
+  public:
++#if XE_APU_HOST_MODE
++  // Host mode: no guest CPU; Setup(nullptr) starts a plain host worker thread.
++  explicit XmaDecoder(Memory* memory) : memory_(memory) {}
++#else
+   explicit XmaDecoder(cpu::Processor* processor);
++#endif
+   ~XmaDecoder();
+ 
+   Memory* memory() const { return memory_; }
+@@ -77,7 +96,11 @@ class XmaDecoder {
+   cpu::Processor* processor_ = nullptr;
+ 
+   std::atomic<bool> worker_running_ = {false};
++#if XE_APU_HOST_MODE
++  std::thread worker_thread_;
++#else
+   kernel::object_ref<kernel::XHostThread> worker_thread_;
++#endif
+   std::unique_ptr<xe::threading::Event> work_event_ = nullptr;
+ 
+   std::atomic<bool> paused_ = false;
 diff --git a/emulator-core/src/main/cpp/xenia/src/xenia/gpu/command_processor.cc b/emulator-core/src/main/cpp/xenia/src/xenia/gpu/command_processor.cc
 index 3ea022494..ad2e18ae8 100644
 --- a/emulator-core/src/main/cpp/xenia/src/xenia/gpu/command_processor.cc

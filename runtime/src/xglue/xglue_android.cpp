@@ -18,6 +18,7 @@
 #include "xenia/base/cvar.h"
 #include "xenia/base/logging.h"
 #include "xenia/gpu/vulkan/vulkan_graphics_system.h"
+#include "xe_aaudio_audio_driver.h"
 #include "xenia/ui/surface_android.h"
 #include "xenia/ui/window.h"
 #include "xenia/ui/windowed_app_context.h"
@@ -156,6 +157,12 @@ namespace xglue
     // be tried without rebuilding: <userdata>/gpu.toml.
     static std::string s_gpuConfigFile;
     void SetGpuConfigFile(const char* path) { s_gpuConfigFile = path ? path : ""; }
+
+    // Audio output (xglue_audio.cpp): Xendroid's AAudio driver, 48 kHz 5.1 game frames.
+    xe::apu::AudioDriver* CreateAudioDriver(xe::Memory* memory, xe::threading::Semaphore* semaphore)
+    {
+        return new xe::apu::aaudio::AAudioAudioDriver(memory, semaphore, 48000, 6, true);
+    }
 
     void SetCustomDriver(const char* nativeLibDir, const char* driverLibrary)
     {

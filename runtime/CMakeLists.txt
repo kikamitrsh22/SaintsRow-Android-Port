@@ -87,6 +87,7 @@ add_library(xglue STATIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src/xglue/xglue_memory.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/xglue/xglue_gpu.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/xglue/xglue_win.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/xglue/xglue_audio_none.cpp
     ${XENIA_DIR}/src/xenia/memory.cc
     ${XENIA_DIR}/src/xenia/cpu/mmio_handler.cc
 )

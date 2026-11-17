@@ -84,6 +84,18 @@ add_library(saintsrow SHARED
     ${RT_SRC}/xglue/xglue_memory.cpp
     ${RT_SRC}/xglue/xglue_gpu.cpp
     ${RT_SRC}/xglue/xglue_android.cpp
+    ${RT_SRC}/xglue/xglue_audio.cpp
+    # Audio: Xenia's XMA decoder in host mode (XE_APU_HOST_MODE) and Xendroid's AAudio output.
+    ${XENDROID_CPP}/xenia/src/xenia/apu/xma_decoder.cc
+    ${XENDROID_CPP}/xenia/src/xenia/apu/xma_context.cc
+    ${XENDROID_CPP}/xenia/src/xenia/apu/xma_context_fake.cc
+    ${XENDROID_CPP}/xenia/src/xenia/apu/xma_context_master.cc
+    ${XENDROID_CPP}/xenia/src/xenia/apu/xma_context_new.cc
+    ${XENDROID_CPP}/xenia/src/xenia/apu/xma_context_old.cc
+    ${XENDROID_CPP}/xenia/src/xenia/apu/xma_register_file.cc
+    ${XENDROID_CPP}/xenia/src/xenia/apu/audio_driver.cc
+    ${XENDROID_CPP}/xenia/src/xenia/apu/apu_flags.cc
+    ${XENDROID_CPP}/xe_aaudio_audio_driver.cpp
     ${XENDROID_CPP}/xenia/src/xenia/memory.cc
     ${XENDROID_CPP}/xenia/src/xenia/cpu/mmio_handler.cc
     ${XENDROID_CPP}/xenia/src/xenia/ui/surface_android.cc
@@ -91,11 +103,14 @@ add_library(saintsrow SHARED
 target_include_directories(saintsrow PRIVATE
     ${XENDROID_CPP}/xenia ${XENDROID_CPP}/xenia/src ${XENDROID_CPP}/xenia/third_party
     ${XENDROID_CPP}/xenia/third_party/fmt/include ${XENDROID_CPP}/xenia/third_party/Vulkan-Headers/include
-    ${XENDROID_CPP}/xenia/third_party/glslang ${CMAKE_BINARY_DIR}/xenia)
+    ${XENDROID_CPP}/xenia/third_party/glslang ${CMAKE_BINARY_DIR}/xenia
+    ${XENDROID_CPP} ${XENDROID_CPP}/xenia/third_party/FFmpeg ${XENDROID_CPP}/xenia/third_party/ffmpeg-xenia)
+target_compile_definitions(saintsrow PRIVATE XE_APU_HOST_MODE=1)
 target_compile_options(saintsrow PRIVATE -fexceptions -Wno-everything)
 target_link_options(saintsrow PRIVATE -Wl,--exclude-libs,ALL -Wl,--gc-sections)
 target_link_libraries(saintsrow PRIVATE
     runtime_core
     xenia-gpu-vulkan xenia-gpu xenia-ui-vulkan xenia-ui xenia-base
     glslang-spirv dxbc snappy xxhash fmt adrenotools
-    android log vulkan dl z)
+    libavcodec libavutil
+    android log vulkan dl z aaudio)

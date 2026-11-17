@@ -56,4 +56,18 @@ namespace xglue
     // Android: the app's native library folder (adrenotools hooks) and an optional custom Vulkan
     // driver library ("" = system driver). Call before InitGraphics.
     void SetCustomDriver(const char* nativeLibDir, const char* driverLibrary);
+
+    // ---- audio (xglue_audio.cpp; xglue_audio_none.cpp where the APU is not built) ----
+    // XMA decoder; call after InitMemory. False = no audio on this build/device.
+    bool InitAudio();
+    uint32_t XmaCreateContext();
+    void XmaReleaseContext(uint32_t context);
+    // Output device for one XAudio render client: index, or -1.
+    int AudioOpen();
+    // Waits until the device can take another frame (false on timeout).
+    bool AudioWaitSlot(int index, uint32_t timeoutMs);
+    // One frame of 6 x 256 big-endian floats at guest address `samples`.
+    void AudioSubmit(int index, uint32_t samples);
+    void AudioClose(int index);
+    void AudioPause(bool paused);
 }

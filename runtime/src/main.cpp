@@ -6,6 +6,7 @@
 #include "kernel/kernel.h"
 #include "gpu/gpu.h"
 #include "input.h"
+#include "audio.h"
 #include "xglue/xglue.h"
 
 #define WIN32_LEAN_AND_MEAN
@@ -309,6 +310,7 @@ int main(int argc, char** argv)
     if (!loader::Load(gameDir / "default.xex"))
         return 1;
 
+    audio::Init();
     if (!xglue::InitGraphics(gpu::DispatchInterrupt))
     {
         LOG("failed to initialize the window / Vulkan GPU");

@@ -1,4 +1,6 @@
 // Networking (always offline) and audio (silent for now).
+#include "../audio.h"
+#include <atomic>
 #include "kernel.h"
 #include "../memory.h"
 
@@ -119,19 +121,33 @@ NET_FAIL(NetDll_XNetQosRelease)
 NET_FAIL(NetDll_XNetQosServiceLookup)
 
 // ---------------------------------------------------------------------------
-// Audio: accept the render client but never ask for frames yet.
+// Audio (audio.cpp): the render client is called back whenever the output device has room;
+// driver handles are 0x4155xxxx with the client index in the low half, as on the console.
 // ---------------------------------------------------------------------------
 
 // XAudioRegisterRenderDriverClient(pCallback, pDriver)
 GUEST_IMPORT(XAudioRegisterRenderDriverClient)
 {
     uint32_t cb = guest::r32(ctx.r3.u32), arg = guest::r32(ctx.r3.u32 + 4);
-    LOG("XAudioRegisterRenderDriverClient(callback=%08X, arg=%08X) - audio is silent", cb, arg);
-    guest::w32(ctx.r4.u32, 0x41550000);
+    int index = cb ? audio::RegisterClient(cb, arg) : -1;
+    LOG("XAudioRegisterRenderDriverClient(callback=%08X, arg=%08X) -> client %d%s", cb, arg, index,
+        index < 0 ? " (silent)" : "");
+    // Without an output device the game still gets a handle and simply never gets called back.
+    guest::w32(ctx.r4.u32, 0x41550000 | uint32_t(index < 0 ? 0xFFFF : index));
     ctx.r3.u64 = 0;
 }
-GUEST_IMPORT(XAudioUnregisterRenderDriverClient) { ctx.r3.u64 = 0; }
-GUEST_IMPORT(XAudioSubmitRenderDriverFrame) { ctx.r3.u64 = 0; }
+GUEST_IMPORT(XAudioUnregisterRenderDriverClient)
+{
+    uint32_t index = ctx.r3.u32 & 0xFFFF;
+    if (index != 0xFFFF) audio::UnregisterClient(int(index));
+    ctx.r3.u64 = 0;
+}
+GUEST_IMPORT(XAudioSubmitRenderDriverFrame)
+{
+    uint32_t index = ctx.r3.u32 & 0xFFFF;
+    if (index != 0xFFFF) audio::SubmitFrame(int(index), ctx.r4.u32);
+    ctx.r3.u64 = 0;
+}
 
 // XAudioGetVoiceCategoryVolume(category, pVolume)
 GUEST_IMPORT(XAudioGetVoiceCategoryVolume)
@@ -144,10 +160,22 @@ GUEST_IMPORT(XAudioGetVoiceCategoryVolume)
 }
 GUEST_IMPORT(XAudioGetVoiceCategoryVolumeChangeMask) { guest::w32(ctx.r4.u32, 0); ctx.r3.u64 = 0; }
 
+// Hardware XMA contexts come from the decoder (audio.cpp); without one, a plain zeroed block so
+// the game keeps running silently.
 GUEST_IMPORT(XMACreateContext)
 {
-    uint32_t c = mem::SystemAllocZeroed(0x40);
+    uint32_t c = audio::CreateXmaContext();
+    bool hardware = c != 0;
+    if (!c) c = mem::SystemAllocZeroed(0x40);
     guest::w32(ctx.r3.u32, c);
+    static std::atomic<int> s_logged{ 0 };
+    if (s_logged.fetch_add(1) < 4) LOG("XMACreateContext -> %08X%s", c, hardware ? "" : " (no decoder)");
+    ctx.r3.u64 = c ? 0 : 0xC0000017; // STATUS_NO_MEMORY
+}
+GUEST_IMPORT(XMAReleaseContext)
+{
+    uint32_t c = ctx.r3.u32;
+    if (c >= 0xA0000000) audio::ReleaseXmaContext(c); // decoder contexts are physical memory
+    else if (c) mem::g_system.Free(c);
     ctx.r3.u64 = 0;
 }
-GUEST_IMPORT(XMAReleaseContext) { mem::g_system.Free(ctx.r3.u32); ctx.r3.u64 = 0; }

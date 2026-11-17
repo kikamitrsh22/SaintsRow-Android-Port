@@ -2,6 +2,7 @@
 #include "../guest.h"
 #include "../gpu/gpu.h"
 #include "../input.h"
+#include "../audio.h"
 #include "../kernel/kernel.h"
 #include "../loader.h"
 #include "../memory.h"
@@ -70,6 +71,7 @@ static void UiThreadMain(std::string gameDir, std::string userDir)
     if (!loader::Load(std::filesystem::path(gameDir) / "default.xex"))
         return;
     xglue::SetGpuConfigFile((std::filesystem::path(userDir) / "gpu.toml").string().c_str());
+    audio::Init();
     if (!xglue::InitGraphics(gpu::DispatchInterrupt))
     {
         LOG("failed to initialize Vulkan");
