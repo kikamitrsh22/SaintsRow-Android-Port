@@ -20,9 +20,22 @@ namespace kernel
 
     struct GuestThread;
 
+    // A thread blocked in Wait(): woken only by the objects it waits on (with g_lock held).
+    struct Waiter
+    {
+        std::condition_variable cv;
+    };
+
     struct Object
     {
         virtual ~Object() = default;
+        // Threads currently blocked on this object (g_lock).
+        std::vector<Waiter*> waiters;
+        // Wake the threads waiting on this object. Call with g_lock held after changing its state.
+        void NotifyWaiters()
+        {
+            for (Waiter* w : waiters) w->cv.notify_one();
+        }
         // Called with g_lock held.
         virtual bool IsSignaled(GuestThread*) const { return false; }
         virtual void OnAcquire(GuestThread*) {}

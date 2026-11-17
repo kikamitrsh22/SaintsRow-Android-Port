@@ -17,8 +17,14 @@ endif()
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "AMD64|x86_64")
     set(ARCH_FLAGS -march=x86-64-v3)
 elseif(ANDROID OR CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
-    # Snapdragon 8xx and newer: ARMv8.2 with dot product and half-precision float.
-    set(ARCH_FLAGS -march=armv8.2-a+fp16+dotprod)
+    # Target device: Snapdragon 8 Elite (Oryon cores). SR_GENERIC_ARM64=ON builds for any
+    # ARMv8.2 phone instead (Snapdragon 8xx and newer: dot product and half-precision float).
+    option(SR_GENERIC_ARM64 "Build the Android code for generic ARMv8.2 instead of Oryon" OFF)
+    if(SR_GENERIC_ARM64)
+        set(ARCH_FLAGS -march=armv8.2-a+fp16+dotprod)
+    else()
+        set(ARCH_FLAGS -mcpu=oryon-1)
+    endif()
 endif()
 
 # ---------------------------------------------------------------------------
@@ -33,7 +39,10 @@ if(MSVC)
     target_compile_options(ppc PRIVATE /O2 /Ob2 /EHsc /FI${CMAKE_CURRENT_SOURCE_DIR}/src/ppc_indirect.h)
 else()
     # Exceptions + unwind tables: ExTerminateThread unwinds through recompiled frames.
+    # No stack protector / frame pointer in the recompiled code: it is hot and its frames hold
+    # no host arrays.
     target_compile_options(ppc PRIVATE -O2 -fexceptions -funwind-tables -ffp-contract=off
+        -fno-stack-protector -fomit-frame-pointer
         -include ${CMAKE_CURRENT_SOURCE_DIR}/src/ppc_indirect.h)
 endif()
 

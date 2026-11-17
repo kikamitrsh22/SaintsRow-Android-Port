@@ -134,3 +134,18 @@ name = "SrClampByteR8"
 address = 0x8265F660
 registers = ["r8"]
 after_instruction = true
+
+# "Unlock FPS" (Xenia patch by illusion / Tervel, base default.xex): the frame-time limits at
+# 0x827AA6D8 / 0x827AA6DC get 0 and the second constant instead of max/min of the two, so the game
+# no longer holds itself to 30 fps. The hooks replace the compare-and-store and jump past it.
+[[midasm_hook]]
+name = "SrUnlockFpsStore"
+address = 0x82201830
+registers = ["r3", "r11", "f13"]
+jump_address = 0x82201848
+
+[[midasm_hook]]
+name = "SrUnlockFpsStore"
+address = 0x82370D40
+registers = ["r3", "r11", "f13"]
+jump_address = 0x82370D58

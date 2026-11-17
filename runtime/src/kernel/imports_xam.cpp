@@ -418,7 +418,7 @@ GUEST_IMPORT(XamShowSigninUI)
         std::lock_guard lock(g_lock);
         s_listener->queue.push_back({ 0x00000009, 0 }); // XN_SYS_UI closed
         s_listener->signaled = true;
-        g_cv.notify_all();
+        s_listener->NotifyWaiters();
     }
     ctx.r3.u64 = ERROR_SUCCESS;
 }

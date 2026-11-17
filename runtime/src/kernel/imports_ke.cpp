@@ -121,7 +121,7 @@ GUEST_IMPORT(KeInitializeSemaphore)
         std::lock_guard lock(g_lock);
         existing->limit = limit;
         existing->count = count;
-        g_cv.notify_all();
+        existing->NotifyWaiters();
         return;
     }
     RegisterGuestObject(s, std::make_shared<Semaphore>(count, limit));

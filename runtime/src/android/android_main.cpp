@@ -3,6 +3,7 @@
 #include "../gpu/gpu.h"
 #include "../input.h"
 #include "../audio.h"
+#include "../perf_hint.h"
 #include "../kernel/kernel.h"
 #include "../loader.h"
 #include "../memory.h"
@@ -61,6 +62,7 @@ static void UiThreadMain(std::string gameDir, std::string userDir)
     std::filesystem::create_directories(userDir);
     rt::s_logFile = std::fopen((std::filesystem::path(userDir) / "saintsrow.log").string().c_str(), "w");
     LOG("Saints Row native runtime (Android) - game=%s user=%s", gameDir.c_str(), userDir.c_str());
+    perf::SetConfigDir(userDir.c_str());
 
     if (!mem::Init())
     {

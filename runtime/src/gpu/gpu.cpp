@@ -1,6 +1,7 @@
 #include "gpu.h"
 #include "../guest.h"
 #include "../kernel/kernel.h"
+#include "../perf_hint.h"
 
 #include <atomic>
 #include <chrono>
@@ -31,6 +32,7 @@ namespace gpu
 
     void OnSwap()
     {
+        perf::OnFrame();
         uint64_t n = ++s_swaps;
         static auto last = steady_clock::now();
         static uint64_t lastN = 0;

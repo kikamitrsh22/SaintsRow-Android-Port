@@ -1,4 +1,7 @@
 #include "kernel.h"
+#include "../perf_hint.h"
+#include <string>
+#include <map>
 #include "../memory.h"
 
 #include <algorithm>
@@ -155,7 +158,29 @@ namespace kernel
             }
             ~WaitMark() { if (t) t->waitingSince = 0; }
         } mark(self);
+        // Block on this thread's own condition variable, registered with each object, so a signal
+        // wakes only the threads waiting for that object (one global condition variable woke every
+        // waiting thread on every signal).
+        thread_local Waiter t_waiter;
+        bool registered = false;
+        struct Unregister
+        {
+            const std::vector<std::shared_ptr<Object>>& objects;
+            bool& registered;
+            ~Unregister()
+            {
+                if (!registered) return;
+                for (auto& o : objects)
+                {
+                    if (!o) continue;
+                    auto& v = o->waiters;
+                    for (size_t i = 0; i < v.size(); i++)
+                        if (v[i] == &t_waiter) { v[i] = v.back(); v.pop_back(); break; }
+                }
+            }
+        };
         std::unique_lock lock(g_lock);
+        Unregister unregister{ objects, registered }; // runs before the lock is released
         for (;;)
         {
             if (waitAll)
@@ -181,9 +206,15 @@ namespace kernel
                 }
             }
 
+            if (!registered)
+            {
+                for (auto& o : objects)
+                    if (o) o->waiters.push_back(&t_waiter);
+                registered = true;
+            }
             if (deadline)
             {
-                if (g_cv.wait_until(lock, *deadline) == std::cv_status::timeout && steady_clock::now() >= *deadline)
+                if (t_waiter.cv.wait_until(lock, *deadline) == std::cv_status::timeout && steady_clock::now() >= *deadline)
                 {
                     // one last check happens on the next loop iteration only if we didn't time out
                     return STATUS_TIMEOUT;
@@ -191,7 +222,7 @@ namespace kernel
             }
             else
             {
-                g_cv.wait(lock);
+                t_waiter.cv.wait(lock);
             }
         }
     }
@@ -201,7 +232,7 @@ namespace kernel
         std::lock_guard lock(g_lock);
         uint32_t prev = e.signaled;
         e.signaled = true;
-        g_cv.notify_all();
+        e.NotifyWaiters();
         return prev;
     }
 
@@ -221,7 +252,7 @@ namespace kernel
             std::lock_guard lock(g_lock);
             prev = e.signaled;
             e.signaled = true;
-            g_cv.notify_all();
+            e.NotifyWaiters();
         }
         std::this_thread::yield();
         {
@@ -241,7 +272,7 @@ namespace kernel
             return prev;
         }
         s.count += count;
-        g_cv.notify_all();
+        s.NotifyWaiters();
         if (status) *status = STATUS_SUCCESS;
         return prev;
     }
@@ -258,7 +289,7 @@ namespace kernel
         if (--m.recursion == 0)
         {
             m.owner = nullptr;
-            g_cv.notify_all();
+            m.NotifyWaiters();
         }
         if (status) *status = STATUS_SUCCESS;
         return prev;
@@ -364,6 +395,7 @@ namespace kernel
     static void ThreadEntry(GuestThread* t)
     {
         t_current = t;
+        perf::RegisterCurrentThread(t->id);
         PPCContext& ctx = *t->ctx;
         ctx.fpscr.loadFromHost();
 
@@ -398,6 +430,7 @@ namespace kernel
         std::lock_guard lock(g_lock);
         t->exited = true;
         t->exitCode = code;
+        t->NotifyWaiters();
         g_cv.notify_all();
     }
 
