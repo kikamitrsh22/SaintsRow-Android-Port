@@ -1,5 +1,6 @@
 // Android entry points (JNI) for libsaintsrow.so. Java side: com.saintsrow.port.NativeBridge.
 #include "../guest.h"
+#include "../platform.h"
 #include "../gpu/gpu.h"
 #include "../input.h"
 #include "../audio.h"
@@ -64,6 +65,7 @@ static void UiThreadMain(std::string gameDir, std::string userDir)
     LOG("Saints Row native runtime (Android) - game=%s user=%s", gameDir.c_str(), userDir.c_str());
     perf::SetConfigDir(userDir.c_str());
 
+    InitGuestTimebase();
     if (!mem::Init())
     {
         LOG("failed to reserve guest memory");

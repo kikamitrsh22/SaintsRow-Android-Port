@@ -85,5 +85,11 @@ The game holds itself to 30 fps; the "Unlock FPS" patch (mid-asm hooks at `0x822
 - Native memset/memcpy for the guest CRT; the D3D GPU-fence wait sleeps after 300 us instead of
   spinning (`spin_gpu_wait` in `userdata` restores the spin).
 
+Game speed: the game times its frames with `mftb` and assumes the console's fixed 49.875 MHz
+timebase. The recompiler emits `PPC_QUERY_TIMEBASE()` for `mftb`, which scales the host counter
+(19.2 MHz on ARM, the TSC on x86) to 49.875 MHz (`ppc_indirect.h`, `timebase.cpp`); with the raw ARM
+counter the whole game ran at 0.385x speed. The Havok step is set from the game's own frame time
+(0x827AA61C) inside `sub_82255FD0`, where the frame is split into physics steps.
+
 The Odin 3's performance mode and temperature cap the CPU (Normal mode: 1.15 / 1.96 GHz); when it
 throttles, the city drops toward 45 fps.

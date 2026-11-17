@@ -1,5 +1,5 @@
 diff --git a/XenonRecomp/recompiler.cpp b/XenonRecomp/recompiler.cpp
-index fa91527..c56a213 100644
+index fa91527..f5ee3bb 100644
 --- a/XenonRecomp/recompiler.cpp
 +++ b/XenonRecomp/recompiler.cpp
 @@ -609,7 +609,9 @@ bool Recompiler::Recompile(
@@ -33,6 +33,15 @@ index fa91527..c56a213 100644
      case PPC_INST_FSQRT:
          printSetFlushMode(false);
          println("\t{}.f64 = sqrt({}.f64);", f(insn.operands[0]), f(insn.operands[1]));
+@@ -1260,7 +1268,7 @@ bool Recompiler::Recompile(
+         break;
+ 
+     case PPC_INST_MFTB:
+-        println("\t{}.u64 = __rdtsc();", r(insn.operands[0]));
++        println("\t{}.u64 = PPC_QUERY_TIMEBASE();", r(insn.operands[0]));
+         break;
+ 
+     case PPC_INST_MR:
 @@ -1305,6 +1313,12 @@ bool Recompiler::Recompile(
          println("\t{}.s64 = (int64_t({}.s32) * int64_t({}.s32)) >> 32;", r(insn.operands[0]), r(insn.operands[1]), r(insn.operands[2]));
          break;

@@ -30,6 +30,11 @@ inline uint64_t HostTimebaseFrequency()
 #error "Unsupported host architecture"
 #endif
 
+// Guest timebase (mftb, KeQueryPerformanceFrequency): the console's fixed 49.875 MHz.
+constexpr uint64_t kGuestTimebaseFrequency = 49875000;
+// Sets the host counter -> guest timebase factor. Call once at start, before guest code runs.
+void InitGuestTimebase();
+
 inline int FileSeek64(std::FILE* f, int64_t offset, int origin)
 {
 #if defined(_WIN32)

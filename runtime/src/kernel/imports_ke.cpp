@@ -219,26 +219,10 @@ GUEST_IMPORT(KeTlsSetValue)
 // Time
 // ---------------------------------------------------------------------------
 
-static uint64_t MeasureTimebaseFrequency()
-{
-#if defined(__aarch64__)
-    return HostTimebaseFrequency();
-#else
-    auto t0 = steady_clock::now();
-    uint64_t c0 = HostTimebase();
-    std::this_thread::sleep_for(milliseconds(50));
-    uint64_t c1 = HostTimebase();
-    auto t1 = steady_clock::now();
-    double secs = duration<double>(t1 - t0).count();
-    return uint64_t(double(c1 - c0) / secs);
-#endif
-}
-
-// The recompiler turns mftb into the host cycle counter, so report that counter's frequency.
+// mftb runs at the console's 49.875 MHz (timebase.cpp), so that is the performance counter frequency.
 GUEST_IMPORT(KeQueryPerformanceFrequency)
 {
-    static uint64_t s_freq = MeasureTimebaseFrequency();
-    ctx.r3.u64 = s_freq;
+    ctx.r3.u64 = kGuestTimebaseFrequency;
 }
 
 GUEST_IMPORT(KeQuerySystemTime)

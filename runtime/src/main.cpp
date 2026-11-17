@@ -1,5 +1,6 @@
 // Saints Row native runtime - entry point.
 #include "guest.h"
+#include "platform.h"
 #include "loader.h"
 #include "memory.h"
 #include "vfs.h"
@@ -299,6 +300,7 @@ int main(int argc, char** argv)
     }
 
     std::filesystem::path gameDir = argv[1];
+    InitGuestTimebase();
     if (!mem::Init())
     {
         LOG("failed to reserve 4 GB of guest memory");

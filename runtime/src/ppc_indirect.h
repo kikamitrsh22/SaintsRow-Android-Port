@@ -6,7 +6,30 @@
 
 #include <cstdint>
 
-// Note: mftb becomes __rdtsc(); ppc_context.h already provides a cntvct_el0 version on ARM64.
+// mftb: the Xbox 360 timebase ticks at a fixed 49.875 MHz and the game relies on that (its frame
+// time came out at 0.385x real time with the raw 19.2 MHz ARM counter: slow motion). The recompiler
+// emits PPC_QUERY_TIMEBASE() for mftb; it scales the host counter to 49.875 MHz with the 32.32
+// fixed-point factor the runtime sets up at start (InitGuestTimebase, timebase.cpp).
+#if defined(__aarch64__) || defined(_M_ARM64)
+#elif defined(_MSC_VER)
+#include <intrin.h>
+#else
+#include <x86intrin.h>
+#endif
+
+extern "C" uint64_t g_guestTimebaseMul;
+
+inline uint64_t PPCGuestTimebase()
+{
+#if defined(__aarch64__) || defined(_M_ARM64)
+    uint64_t host;
+    __asm__ __volatile__("mrs %0, cntvct_el0" : "=r"(host));
+#else
+    uint64_t host = __rdtsc();
+#endif
+    return uint64_t((unsigned __int128)host * g_guestTimebaseMul >> 32);
+}
+#define PPC_QUERY_TIMEBASE() PPCGuestTimebase()
 
 extern "C" void PPCIndirectCallFailed(unsigned int target, unsigned int lr);
 
