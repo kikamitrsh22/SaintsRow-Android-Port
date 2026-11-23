@@ -50,6 +50,7 @@ namespace gpu
     }
 
     // Swap times for the performance overlay (ring of the last 1024 frames).
+    std::atomic<uint64_t> g_gpuWaitUs{ 0 };
     static std::mutex s_frameTimesLock;
     static steady_clock::time_point s_frameTimes[1024];
     static uint32_t s_frameTimesNext = 0;
@@ -107,6 +108,28 @@ namespace gpu
         auto now = steady_clock::now();
         const double frameMs = duration<double, std::milli>(now - lastFrame).count();
         lastFrame = now;
+        // Stutter log: every frame over 30 ms (at most 4 lines a second) with the file I/O done
+        // since the previous frame.
+        {
+            static uint64_t s_lastOpens = 0, s_lastReads = 0, s_lastBytes = 0, s_lastReadUs = 0, s_lastWaitUs = 0;
+            const uint64_t waitUs = g_gpuWaitUs;
+            const uint64_t opens = kernel::g_io.opens, reads = kernel::g_io.reads,
+                           bytes = kernel::g_io.readBytes, readUs = kernel::g_io.readUs;
+            static steady_clock::time_point s_lastSpikeLog;
+            if (frameMs > 30 && now - s_lastSpikeLog > milliseconds(250))
+            {
+                s_lastSpikeLog = now;
+                LOG("spike: %.0f ms frame | waiting for GPU %.1f ms | files: %llu opens, %llu reads, %.2f MB in %.1f ms",
+                    frameMs, (waitUs - s_lastWaitUs) / 1000.0,
+                    (unsigned long long)(opens - s_lastOpens), (unsigned long long)(reads - s_lastReads),
+                    (bytes - s_lastBytes) / 1048576.0, (readUs - s_lastReadUs) / 1000.0);
+            }
+            s_lastWaitUs = waitUs;
+            s_lastOpens = opens;
+            s_lastReads = reads;
+            s_lastBytes = bytes;
+            s_lastReadUs = readUs;
+        }
         if (frameMs > 20) s_over20++;
         if (frameMs > 33) s_over33++;
         if (frameMs > s_maxMs) s_maxMs = frameMs;

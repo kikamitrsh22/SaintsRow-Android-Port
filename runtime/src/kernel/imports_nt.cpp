@@ -1,5 +1,8 @@
 // Nt*/Ob* imports: handle-based sync objects, timers, virtual memory, files.
 #include "kernel.h"
+#include <chrono>
+#include <set>
+#include <string>
 #include "../memory.h"
 #include "../platform.h"
 #include "../vfs.h"
@@ -359,7 +362,17 @@ static uint32_t OpenFile(uint32_t pHandle, uint32_t objAttr, uint32_t iosb, uint
     uint32_t h = CreateHandle(f);
     guest::w32(pHandle, h);
     SetIosb(iosb, STATUS_SUCCESS, info);
-    LOG("open: %s -> %s (handle %08X)", guestName.c_str(), host.string().c_str(), h);
+    // Each successful open used to be logged; the game reopens its stream packfiles constantly
+    // (2000+ lines in two minutes), and every log line is a logcat write plus a flushed write to
+    // external storage, on the thread doing the streaming. Log each file the first time only.
+    {
+        static std::mutex s_seenLock;
+        static std::set<std::string> s_seen;
+        std::lock_guard lock(s_seenLock);
+        if (s_seen.insert(guestName).second)
+            LOG("open: %s -> %s (handle %08X)", guestName.c_str(), host.string().c_str(), h);
+    }
+    g_io.opens++;
     return STATUS_SUCCESS;
 }
 
@@ -394,9 +407,14 @@ GUEST_IMPORT(NtReadFile)
         int64_t off = int64_t(guest::r64(pOffset));
         if (off >= 0) f->position = uint64_t(off); // -2 = FILE_USE_FILE_POINTER_POSITION
     }
+    const auto readStart = std::chrono::steady_clock::now();
     FileSeek64(f->fp, int64_t(f->position), SEEK_SET);
     size_t n = std::fread(guest::ptr(buffer), 1, length, f->fp);
     f->position += n;
+    g_io.reads++;
+    g_io.readBytes += n;
+    g_io.readUs += uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now() - readStart).count());
     uint32_t status = (n == 0 && length != 0) ? STATUS_END_OF_FILE : STATUS_SUCCESS;
     SetIosb(iosb, status, uint32_t(n));
     SignalCompletion(ctx.r4.u32);

@@ -45,7 +45,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private SurfaceView surfaceView;
 
     // Graphics menu: the small "MENU" button in the top right corner, or L3 + R3 on a controller.
-    private static final int[] FPS_CHOICES = { 30, 60, 120 };
+    private static final int[] FPS_CHOICES = { 30, 40, 60, 120 };
     private static final String[] AA_LABELS = { "Off", "FXAA", "FXAA Extreme (sharper edges, slower)" };
     private static final String[] FG_LABELS = { "Off", "On (ZeroFG: 60 FPS shown as 120 on a 120 Hz screen)" };
     private static final String[] RES_LABELS = {
@@ -57,6 +57,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     private int overlayMode = 0;
     private PerfOverlay perfOverlay;
     private int fpsCap = 60, antiAliasing = 0, frameGeneration = 0, frameGenerationAtStart = 0;
+    private boolean customDriver; // FXAA hangs the GPU on the custom (Turnip) driver
     private int resolutionScale = 1, resolutionScaleAtStart = 1;
     private boolean thumbL, thumbR;
     private AlertDialog menuDialog;
@@ -125,7 +126,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         String[] items = {
                 "Frame rate limit: " + fpsCap + " FPS",
                 "Resolution: " + res,
-                "Anti-aliasing: " + AA_LABELS[antiAliasing].split(" \\(")[0],
+                "Anti-aliasing: " + (customDriver ? "Off (not with the custom driver)"
+                        : AA_LABELS[antiAliasing].split(" \\(")[0]),
                 "Frame generation: " + fg,
                 "Performance overlay: " + OVERLAY_LABELS[overlayMode].split(" \\(")[0],
         };
@@ -150,9 +152,10 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
 
     private void showFpsChoice() {
         String[] labels = new String[FPS_CHOICES.length];
-        int checked = 1;
+        int checked = 2;
         for (int i = 0; i < FPS_CHOICES.length; i++) {
-            labels[i] = FPS_CHOICES[i] + " FPS" + (FPS_CHOICES[i] == 120 ? "  (needs a 120 Hz screen)" : "");
+            labels[i] = FPS_CHOICES[i] + " FPS" + (FPS_CHOICES[i] == 120 ? "  (needs a 120 Hz screen)"
+                    : FPS_CHOICES[i] == 40 ? "  (even pacing on a 120 Hz screen, smoother than an unsteady 60)" : "");
             if (FPS_CHOICES[i] == fpsCap) checked = i;
         }
         dialog("Frame rate limit").setSingleChoiceItems(labels, checked, (d, which) -> {
@@ -181,6 +184,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
     }
 
     private void showAaChoice() {
+        if (customDriver) {
+            dialog("Anti-aliasing").setMessage("FXAA makes the GPU hang (the game closes when you get into a car) "
+                    + "with the custom Turnip driver, so it stays off while that driver is used.\n\n"
+                    + "For smoother edges use Resolution: 2560 x 1440 (2x) instead.")
+                    .setPositiveButton("OK", null).show();
+            return;
+        }
         dialog("Anti-aliasing").setSingleChoiceItems(AA_LABELS, antiAliasing, (d, which) -> {
             antiAliasing = which;
             getSharedPreferences(PREFS, MODE_PRIVATE).edit().putInt(PREF_AA, which).apply();
@@ -214,7 +224,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
      */
     private void applyDisplayRate() {
         // Frame generation shows each game frame twice as often: it needs the 120 Hz mode.
-        float want = fpsCap > 60 || frameGenerationAtStart != 0 ? 120f : 60f;
+        // 40 FPS: every frame is shown for exactly 3 refreshes at 120 Hz (at 60 Hz it would alternate).
+        float want = fpsCap > 60 || fpsCap == 40 || frameGenerationAtStart != 0 ? 120f : 60f;
         Display display = getWindow().getDecorView().getDisplay();
         if (display == null) display = getWindowManager().getDefaultDisplay();
         Display.Mode current = display.getMode(), best = null;
@@ -350,7 +361,9 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback {
         if (!started) {
             started = true;
             Log.i(TAG, "starting: game=" + gameDir + " user=" + userDir);
-            NativeBridge.setDriver(getApplicationInfo().nativeLibraryDir, prepareCustomDriver());
+            String driver = prepareCustomDriver();
+            customDriver = !driver.isEmpty();
+            NativeBridge.setDriver(getApplicationInfo().nativeLibraryDir, driver);
             NativeBridge.setFpsCap(fpsCap);
             NativeBridge.setAntiAliasing(antiAliasing);
             NativeBridge.setFrameGeneration(frameGenerationAtStart);

@@ -111,6 +111,13 @@ namespace kernel
 
     // ---- guest dispatcher objects (KEVENT etc. living in guest memory) --------
     // Creates the host object on first use from the DISPATCHER_HEADER.
+    // File I/O done for the guest (all threads), for the stutter log (gpu.cpp).
+    struct IoStats
+    {
+        std::atomic<uint64_t> opens{ 0 }, openUs{ 0 }, reads{ 0 }, readBytes{ 0 }, readUs{ 0 };
+    };
+    extern IoStats g_io;
+
     std::shared_ptr<Object> GetGuestObject(uint32_t addr);
     void RegisterGuestObject(uint32_t addr, std::shared_ptr<Object> obj);
     void ForgetGuestObject(uint32_t addr);

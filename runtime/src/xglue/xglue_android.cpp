@@ -30,6 +30,7 @@ DECLARE_uint32(framerate_limit);
 DECLARE_string(zerofg_mode);
 DECLARE_path(storage_root);
 DECLARE_bool(vulkan_log_debug_messages);
+DECLARE_bool(vulkan_pipeline_cache_blob);
 DECLARE_int32(draw_resolution_scale_x);
 DECLARE_int32(draw_resolution_scale_y);
 
@@ -188,6 +189,14 @@ namespace xglue
     static std::atomic<int> s_antiAliasing{ 0 };
     void SetAntiAliasing(int mode)
     {
+        // FXAA hangs the GPU on the Turnip driver (kgsl "GPU hang detected", then device lost) when
+        // the player gets into a car, with no change in the swap size or format. Keep it off while
+        // a custom driver is loaded.
+        if (mode != 0 && !cvars::vulkan_lib_path.empty())
+        {
+            __android_log_print(ANDROID_LOG_WARN, "SaintsRowGPU", "FXAA is off with a custom Vulkan driver (GPU hang)");
+            mode = 0;
+        }
         s_antiAliasing = mode;
         using Effect = xe::gpu::CommandProcessor::SwapPostEffect;
         const Effect effect = mode == 2 ? Effect::kFxaaExtreme : mode == 1 ? Effect::kFxaa : Effect::kNone;
@@ -263,6 +272,11 @@ namespace xglue
         // Xenia's logging is not initialised in the port: a Vulkan debug message from the driver
         // (Turnip sends some with frame generation on) crashed in the logger. No debug messenger.
         cvars::vulkan_log_debug_messages = false;
+        // Shader / pipeline storage is on (see below), but the driver's own pipeline binaries are
+        // not reused across runs: with them the Turnip driver hung the GPU in 4 of 8 city runs,
+        // without them 0 of 4 (and 0 of 3 with no storage at all). Pipelines are still created from
+        // the stored descriptions while the game boots, so the in-game compile hitches stay gone.
+        cvars::vulkan_pipeline_cache_blob = false;
         // Render resolution: Xenia scales the game's render targets (needs sparse binding; the GPU
         // clamps to what the device supports).
         cvars::draw_resolution_scale_x = s_resolutionScale;
@@ -281,6 +295,13 @@ namespace xglue
         s_window->SetPresenter(s_gpu->presenter());
         s_window->SurfaceChanged(true);
         g_gpu = s_gpu.get();
+        // Shader / pipeline storage (as Xenia's emulator does when a title starts): shaders and
+        // pipelines the game used are written to <userdata>/cache and created up front next time,
+        // instead of compiling the first time each one is drawn (45 ms GPU stalls while driving).
+        // Asynchronous: it loads while the game boots.
+        if (!s_gpuConfigFile.empty())
+            s_gpu->InitializeShaderStorage(std::filesystem::path(s_gpuConfigFile).parent_path() / "cache",
+                0x545107D1, false);
         SetFrameRateCap(s_fpsCap.load());
         SetAntiAliasing(s_antiAliasing.load());
         return true;

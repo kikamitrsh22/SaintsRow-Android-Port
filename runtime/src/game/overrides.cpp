@@ -4,6 +4,7 @@
 // Fixes ported from Saints Reborn (same default.xex) - see docs/SAINTSREBORN_FINDINGS.md.
 #include "../guest.h"
 #include "../perf_hint.h"
+#include "../gpu/gpu.h"
 
 #include <chrono>
 #include <mutex>
@@ -188,4 +189,5 @@ PPC_FUNC(sub_825DAA80)
         t_lastCall = clock::now();
     }
     __imp__sub_825DAA80(ctx, base);
+    gpu::g_gpuWaitUs += uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(clock::now() - now).count());
 }

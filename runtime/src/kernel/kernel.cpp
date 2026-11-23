@@ -13,6 +13,7 @@ using namespace std::chrono;
 namespace kernel
 {
     std::mutex g_lock;
+    IoStats g_io;
     std::condition_variable_any g_cv;
     TlsInfo g_tls;
 

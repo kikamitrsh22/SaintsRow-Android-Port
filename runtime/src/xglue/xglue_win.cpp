@@ -3,6 +3,7 @@
 #include "xglue_internal.h"
 
 #include <cstdlib>
+#include <filesystem>
 #include <memory>
 
 #include "xenia/base/logging.h"
@@ -64,6 +65,8 @@ namespace xglue
         }
         s_window->SetPresenter(s_gpu->presenter());
         g_gpu = s_gpu.get();
+        // Shader / pipeline storage in userdata/cache (see xglue_android.cpp).
+        s_gpu->InitializeShaderStorage(std::filesystem::current_path() / "userdata" / "cache", 0x545107D1, false);
         return true;
     }
 

@@ -2,6 +2,7 @@
 // This file runs the game's graphics interrupt callback on a guest context and counts swaps.
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 
 namespace gpu
@@ -19,4 +20,7 @@ namespace gpu
         int frames = 0;
     };
     FrameStats GetFrameStats(int windowMs);
+
+    // Time the game spent in its "wait for the GPU" loop (D3D fence waits), for the stutter log.
+    extern std::atomic<uint64_t> g_gpuWaitUs;
 }
